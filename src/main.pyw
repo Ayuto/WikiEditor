@@ -1,0 +1,438 @@
+'''
+TODO:
+- Implement Open
+'''
+
+# =============================================================================
+# >> IMPORTS
+# =============================================================================
+# Python
+import copy
+
+from configobj import ConfigObj
+
+from collections import OrderedDict
+
+# wxPython
+import wx
+
+# gui
+import gui
+
+
+# =============================================================================
+# >> CONSTANTS
+# =============================================================================
+LABEL_EDIT = 'Edit'
+LABEL_ADD = 'Add'
+LABEL_REMOVE = 'Remove'
+
+
+# =============================================================================
+# >> CLASSES
+# =============================================================================
+class TreePart(object):
+    '''
+    Base class for everything in a tree.
+
+    Treat this as an abstract class!
+    '''
+
+    def __init__(self, name):
+        '''
+        Initializes the class.
+
+        @param <name>:
+        The name of the node in the tree.
+        '''
+
+        self.name = name
+
+    def generate_data(self, wiki_items, item_id):
+        '''
+        Generates the data for a tree node.
+
+        @param <wiki_items>:
+        A wx.TreeCtrl object.
+
+        @param <item_id>:
+        The item ID of thise node.
+
+        A subclass needs to implement this!
+        '''
+
+        raise NotImplementedError
+
+
+class NonTemplateContainer(TreePart):
+    '''
+    Represents a node in the tree that can store an unlimited number of
+    children.
+    '''
+
+    def __init__(self, name, template_name):
+        '''
+        Initialzes the object.
+
+        @param <name>:
+        The name of the node.
+
+        @param <template_name>:
+        The name of the templates this node will store.
+        '''
+
+        super(NonTemplateContainer, self).__init__(name)
+        self.template_name = template_name
+
+    def generate_data(self, wiki_items, item_id):
+        data = []
+
+        # Loop through all valid children and generate the data for each
+        # child.
+        child_id, cookie = wiki_items.GetFirstChild(item_id)
+        while child_id.IsOk():
+            data.append(wiki_items.GetItemData(
+                child_id).GetData().generate_data(wiki_items, child_id))
+            child_id, cookie = wiki_items.GetNextChild(item_id, cookie)
+
+        # Finally, join the result
+        return '\n'.join(data)
+
+
+class Template(OrderedDict, TreePart):
+    '''
+    Represents a full template in a tree.
+    '''
+
+    # NOTE:
+    # Do not override __init__. It will break things (e.g copy module) even if
+    # you use super().
+
+    def generate_data(self, wiki_items, item_id):
+        data = []
+
+        # Loop through all valid children and generate the data for each
+        # child.
+        child_id, cookie = wiki_items.GetFirstChild(item_id)
+        while child_id.IsOk():
+            child = wiki_items.GetItemData(child_id).GetData()
+            data.append('| {0}={1}'.format(child.name, child.generate_data(wiki_items, child_id)))
+            child_id, cookie = wiki_items.GetNextChild(item_id, cookie)
+
+        # Finally, join the result
+        return '{{%s\n%s}}'% (self.name, '\n'.join(data))
+
+
+class NonTemplate(TreePart):
+    '''
+    Represents a node that is not a container or template.
+    '''
+
+    def __init__(self, name):
+        '''
+        Initializes the object.
+
+        @param <name>:
+        The name of the node in the tree.
+        '''
+
+        super(NonTemplate, self).__init__(name)
+        self.value = ''
+
+    def generate_data(self, wiki_items, item_id):
+        return self.value.strip()
+
+
+class TemplateManager(dict):
+    '''
+    Manages all templates that where found in a given file.
+    '''
+
+    def __init__(self, file_path):
+        '''
+        Initialzes the object.
+
+        @param <file_path>:
+        The path to a file that contains the template data.
+        '''
+
+        for name, data in ConfigObj(file_path, file_error=True).items():
+            template = Template()
+            template.name = name
+            for key, value in data.items():
+                if value == 'str':
+                    template[key] = NonTemplate(key)
+                else:
+                    template[key] = NonTemplateContainer(key, value)
+
+            self[name] = template
+
+    def get_template(self, name):
+        '''
+        Returns the new template object for the given template name. If no
+        template was found with the given name, a KeyError will be raised.
+
+        @param <name>:
+        The name of the template.
+        '''
+
+        return copy.deepcopy(self[name])
+
+template_mngr = TemplateManager('templates.ini')
+
+
+# =============================================================================
+# >> GUI
+# =============================================================================
+class WikiEditorFrame(gui.MainFrame):
+    '''
+    The GUI class.
+    '''
+
+    def __init__(self, parent):
+        '''
+        Initialzes the object.
+
+        @param <parent>:
+        The parent frame of this frame or None:
+        '''
+
+        super(WikiEditorFrame, self).__init__(parent)
+        
+        self.save_path = None
+
+        # Contains the item ID of the item that was right clicked
+        self.selected_item_id = None
+
+        # Build the popup menu that appears on a right click
+        self.popup_menu = wx.Menu()
+
+        item = self.popup_menu.Append(-1, LABEL_ADD)
+        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+
+        item = self.popup_menu.Append(-1, LABEL_REMOVE)
+        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+
+        self.popup_menu.AppendSeparator()
+
+        item = self.popup_menu.Append(-1, LABEL_EDIT)
+        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+
+        # After initialization ask for a new project
+        self.ask_for_new_project()
+
+    def on_popup_item_selected(self, event):
+        '''
+        Called when an item has been selected from the popup menu.
+        '''
+
+        action = self.popup_menu.FindItemById(event.GetId()).GetText()
+        tree_part = self.wiki_items.GetItemData(self.selected_item_id).GetData()
+
+        # Handle edit action
+        if action == LABEL_EDIT:
+            self.send_edit_dialog(tree_part)
+
+        # Handle add action
+        elif action == LABEL_ADD:
+            # Get the template which is hold by the container
+            template = template_mngr.get_template(tree_part.template_name)
+
+            # Add the template as a child to the container
+            new_node = self.wiki_items.AppendItem(self.selected_item_id, template.name)
+            self.wiki_items.SetItemData(new_node, wx.TreeItemData(template))
+            for tree_part in template.values():
+                item = self.wiki_items.AppendItem(new_node, tree_part.name)
+                self.wiki_items.SetItemData(item, wx.TreeItemData(tree_part))
+
+        # Handle remove action
+        elif action == LABEL_REMOVE:
+            # Remove the node from the tree. All children are also removed.
+            self.wiki_items.Delete(self.selected_item_id)
+
+        # Handle all other actions. This should not happen.
+        else:
+            raise NotImplementedError
+
+    def on_wiki_item_activated(self, event):
+        '''
+        Called when an item has been activated by hitting enter or
+        double-clicking it.
+        '''
+
+        tree_part = self.wiki_items.GetItemData(event.GetItem()).GetData()
+
+        # Only NonTemplate objects are editable!
+        if isinstance(tree_part, NonTemplate):
+            self.send_edit_dialog(tree_part)
+
+    def on_wiki_items_right_click(self, event):
+        '''
+        Called when a wiki item has been right-clicked.
+        '''
+
+        item_id = event.GetItem()
+        self.selected_item_id = item_id
+        tree_part = self.wiki_items.GetItemData(item_id).GetData()
+
+        enabled = None
+
+        # Find the action that should be enabled
+        if isinstance(tree_part, Template):
+            enabled = LABEL_REMOVE
+        elif isinstance(tree_part, NonTemplate):
+            enabled = LABEL_EDIT
+        elif isinstance(tree_part, NonTemplateContainer):
+            enabled = LABEL_ADD
+        else:
+            raise NotImplementedError
+
+        # Enable the found action and disable all other actions
+        for item in self.popup_menu.GetMenuItems():
+            item.Enable(item.GetLabel() == enabled)
+
+        self.PopupMenu(self.popup_menu, event.GetPoint())
+
+    def on_wiki_item_selection(self, event):
+        '''
+        Called when the selection of a wiki item has been changed.
+        '''
+
+        item_id = event.GetItem()
+
+        # Update the output box
+        self.output.Value = self.wiki_items.GetItemData(
+            item_id).GetData().generate_data(self.wiki_items, item_id)
+
+    def on_new_project(self, event):
+        '''
+        Called when a new project should be started.
+        '''
+
+        self.ask_for_new_project()
+
+    def on_open_file(self, event):
+        '''
+        Called when a file should be opened.
+        '''
+
+        raise NotImplementedError
+
+    def on_save_file(self, event):
+        '''
+        Called when the project should be saved to a file.
+        '''
+        
+        # Get the root item ID
+        root_item_id = self.wiki_items.GetRootItem()
+        
+        # Do not save there is no root item
+        if not root_item_id.IsOk():
+            return
+
+        # Wasn't saved before?
+        if self.save_path is None:
+            self.on_save_file_as(event)
+            return
+            
+        with open(self.save_path, 'w') as f:
+            f.write(self.wiki_items.GetItemData(root_item_id).GetData(
+                ).generate_data(self.wiki_items, root_item_id))
+
+    def on_save_file_as(self, event):
+        '''
+        Called when the project should be saved to a specific file.
+        '''
+        
+        # Get the root item ID
+        root_item_id = self.wiki_items.GetRootItem()
+        
+        # Do not save there is no root item
+        if not root_item_id.IsOk():
+            return
+            
+        save_file_dialog = wx.FileDialog(self, 'Save', style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
+        if save_file_dialog.ShowModal() == wx.ID_CANCEL:
+            return
+            
+        self.save_path = save_file_dialog.GetPath()
+        self.on_save_file(event)
+        
+    def init_new_project(self, template_name):
+        '''
+        Initializes a new project.
+
+        @param <template_name>:
+        The name of the template that should be used as the base.
+        '''
+
+        # Delete all items from the tree
+        self.wiki_items.DeleteAllItems()
+        
+        # Set the save to None, so the save as dialog will be displayed again
+        self.save_path = None
+
+        # Get the new template
+        template = template_mngr.get_template(template_name)
+
+        # Save it as the root item
+        root = self.wiki_items.AddRoot(template.name)
+        self.wiki_items.SetItemData(root, wx.TreeItemData(template))
+
+        # Add its children
+        for tree_part in template.values():
+            item = self.wiki_items.AppendItem(root, tree_part.name)
+            self.wiki_items.SetItemData(item, wx.TreeItemData(tree_part))
+
+        # Show every node
+        self.wiki_items.ExpandAll()
+
+    def send_edit_dialog(self, tree_part):
+        '''
+        Sends the edit dialog to the user.
+
+        @param <tree_part>:
+        The tree part that should be edited.
+        '''
+
+        dialog = gui.SingleItemEditDialog(self)
+        dialog.input_box.Value = tree_part.value
+        if dialog.ShowModal() == wx.ID_OK:
+            tree_part.value = dialog.input_box.Value
+
+        dialog.Destroy()
+
+    def ask_for_new_project(self):
+        '''
+        Send the dialog that ask for a project type. If a new project type
+        has been choosen, it will be initialized.
+        '''
+
+        dialog = gui.NewProjectDialog(self)
+        if dialog.ShowModal() == wx.ID_OK:
+            project_type = dialog.project_type.GetString(
+                dialog.project_type.Selection)
+        else:
+            project_type = ''
+
+        dialog.Destroy()
+
+        if project_type:
+            self.init_new_project(project_type)
+
+
+# =============================================================================
+# >> MAIN ROUTINE
+# =============================================================================
+def main():
+    '''
+    Starts the GUI.
+    '''
+
+    app = wx.App(False)
+    frame = WikiEditorFrame(None)
+    frame.Show(True)
+    app.MainLoop()
+
+if __name__ == '__main__':
+    main()
