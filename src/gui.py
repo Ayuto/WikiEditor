@@ -172,3 +172,42 @@ class SingleItemEditDialog ( wx.Dialog ):
 		pass
 	
 
+###########################################################################
+## Class ChooseTemplateDialog
+###########################################################################
+
+class ChooseTemplateDialog ( wx.Dialog ):
+	
+	def __init__( self, parent ):
+		wx.Dialog.__init__ ( self, parent, id = wx.ID_ANY, title = u"Choose a template", pos = wx.DefaultPosition, size = wx.Size( 207,98 ), style = wx.DEFAULT_DIALOG_STYLE )
+		
+		self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
+		
+		bSizer6 = wx.BoxSizer( wx.VERTICAL )
+		
+		templateChoices = []
+		self.template = wx.Choice( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, templateChoices, wx.CB_SORT )
+		self.template.SetSelection( 0 )
+		bSizer6.Add( self.template, 0, wx.ALL|wx.EXPAND, 5 )
+		
+		bSizer7 = wx.BoxSizer( wx.HORIZONTAL )
+		
+		self.ok = wx.Button( self, wx.ID_OK, u"OK", wx.DefaultPosition, wx.DefaultSize, 0 )
+		bSizer7.Add( self.ok, 0, wx.ALL, 5 )
+		
+		self.cancel = wx.Button( self, wx.ID_CANCEL, u"Cancel", wx.DefaultPosition, wx.DefaultSize, 0 )
+		bSizer7.Add( self.cancel, 0, wx.ALL, 5 )
+		
+		
+		bSizer6.Add( bSizer7, 1, wx.EXPAND, 5 )
+		
+		
+		self.SetSizer( bSizer6 )
+		self.Layout()
+		
+		self.Centre( wx.BOTH )
+	
+	def __del__( self ):
+		pass
+	
+

@@ -64,25 +64,25 @@ class TreePart(object):
         raise NotImplementedError
 
 
-class NonTemplateContainer(TreePart):
+class TemplateContainer(TreePart):
     '''
     Represents a node in the tree that can store an unlimited number of
     children.
     '''
 
-    def __init__(self, name, template_name):
+    def __init__(self, name, templates):
         '''
         Initialzes the object.
 
         @param <name>:
         The name of the node.
 
-        @param <template_name>:
-        The name of the templates this node will store.
+        @param <templates>:
+        A tuple of possible template (names).
         '''
 
-        super(NonTemplateContainer, self).__init__(name)
-        self.template_name = template_name
+        super(TemplateContainer, self).__init__(name)
+        self.templates = templates
 
     def generate_data(self, wiki_items, item_id):
         data = []
@@ -97,6 +97,26 @@ class NonTemplateContainer(TreePart):
 
         # Finally, join the result
         return '\n'.join(data)
+
+
+class NonTemplate(TreePart):
+    '''
+    Represents a node that is not a container or template.
+    '''
+
+    def __init__(self, name):
+        '''
+        Initializes the object.
+
+        @param <name>:
+        The name of the node in the tree.
+        '''
+
+        super(NonTemplate, self).__init__(name)
+        self.value = ''
+
+    def generate_data(self, wiki_items, item_id):
+        return self.value.strip()
 
 
 class Template(OrderedDict, TreePart):
@@ -123,26 +143,6 @@ class Template(OrderedDict, TreePart):
         return '{{%s\n%s}}'% (self.name, '\n'.join(data))
 
 
-class NonTemplate(TreePart):
-    '''
-    Represents a node that is not a container or template.
-    '''
-
-    def __init__(self, name):
-        '''
-        Initializes the object.
-
-        @param <name>:
-        The name of the node in the tree.
-        '''
-
-        super(NonTemplate, self).__init__(name)
-        self.value = ''
-
-    def generate_data(self, wiki_items, item_id):
-        return self.value.strip()
-
-
 class TemplateManager(dict):
     '''
     Manages all templates that where found in a given file.
@@ -162,8 +162,10 @@ class TemplateManager(dict):
             for key, value in data.items():
                 if value == 'str':
                     template[key] = NonTemplate(key)
+                elif isinstance(value, list):
+                    template[key] = TemplateContainer(key, tuple(value))
                 else:
-                    template[key] = NonTemplateContainer(key, value)
+                    template[key] = TemplateContainer(key, (value,))
 
             self[name] = template
 
@@ -198,7 +200,7 @@ class WikiEditorFrame(gui.MainFrame):
         '''
 
         super(WikiEditorFrame, self).__init__(parent)
-        
+
         self.save_path = None
 
         # Contains the item ID of the item that was right clicked
@@ -235,8 +237,28 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Handle add action
         elif action == LABEL_ADD:
+            # Ask the user which template should be used if there are more
+            # than one
+            if len(tree_part.templates) > 1:
+                # Create a new dialog...
+                dialog = gui.ChooseTemplateDialog(self)
+
+                # ... and add all possible templates
+                dialog.template.AppendItems(tree_part.templates)
+
+                # Did the user chose a valid template?
+                if dialog.ShowModal() == wx.ID_OK and dialog.template.Selection != wx.NOT_FOUND:
+                    template_name = dialog.template.GetString(dialog.template.Selection)
+                    dialog.Destroy()
+                else:
+                    dialog.Destroy()
+                    return
+            else:
+                # If there is just one template, just use it without asking
+                template_name = tree_part.templates[0]
+
             # Get the template which is hold by the container
-            template = template_mngr.get_template(tree_part.template_name)
+            template = template_mngr.get_template(template_name)
 
             # Add the template as a child to the container
             new_node = self.wiki_items.AppendItem(self.selected_item_id, template.name)
@@ -253,6 +275,9 @@ class WikiEditorFrame(gui.MainFrame):
         # Handle all other actions. This should not happen.
         else:
             raise NotImplementedError
+
+        # Finally, update the current data box
+        self.display_current_data()
 
     def on_wiki_item_activated(self, event):
         '''
@@ -282,7 +307,7 @@ class WikiEditorFrame(gui.MainFrame):
             enabled = LABEL_REMOVE
         elif isinstance(tree_part, NonTemplate):
             enabled = LABEL_EDIT
-        elif isinstance(tree_part, NonTemplateContainer):
+        elif isinstance(tree_part, TemplateContainer):
             enabled = LABEL_ADD
         else:
             raise NotImplementedError
@@ -301,8 +326,7 @@ class WikiEditorFrame(gui.MainFrame):
         item_id = event.GetItem()
 
         # Update the output box
-        self.output.Value = self.wiki_items.GetItemData(
-            item_id).GetData().generate_data(self.wiki_items, item_id)
+        self.display_current_data()
 
     def on_new_project(self, event):
         '''
@@ -322,10 +346,10 @@ class WikiEditorFrame(gui.MainFrame):
         '''
         Called when the project should be saved to a file.
         '''
-        
+
         # Get the root item ID
         root_item_id = self.wiki_items.GetRootItem()
-        
+
         # Do not save there is no root item
         if not root_item_id.IsOk():
             return
@@ -334,7 +358,7 @@ class WikiEditorFrame(gui.MainFrame):
         if self.save_path is None:
             self.on_save_file_as(event)
             return
-            
+
         with open(self.save_path, 'w') as f:
             f.write(self.wiki_items.GetItemData(root_item_id).GetData(
                 ).generate_data(self.wiki_items, root_item_id))
@@ -343,21 +367,21 @@ class WikiEditorFrame(gui.MainFrame):
         '''
         Called when the project should be saved to a specific file.
         '''
-        
+
         # Get the root item ID
         root_item_id = self.wiki_items.GetRootItem()
-        
+
         # Do not save there is no root item
         if not root_item_id.IsOk():
             return
-            
+
         save_file_dialog = wx.FileDialog(self, 'Save', style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
         if save_file_dialog.ShowModal() == wx.ID_CANCEL:
             return
-            
+
         self.save_path = save_file_dialog.GetPath()
         self.on_save_file(event)
-        
+
     def init_new_project(self, template_name):
         '''
         Initializes a new project.
@@ -368,7 +392,7 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Delete all items from the tree
         self.wiki_items.DeleteAllItems()
-        
+
         # Set the save to None, so the save as dialog will be displayed again
         self.save_path = None
 
@@ -419,6 +443,15 @@ class WikiEditorFrame(gui.MainFrame):
 
         if project_type:
             self.init_new_project(project_type)
+
+    def display_current_data(self):
+        '''
+        Updates the text box on the right side with the current data.
+        '''
+
+        item_id = self.wiki_items.GetFocusedItem()
+        self.output.Value = self.wiki_items.GetItemData(
+            item_id).GetData().generate_data(self.wiki_items, item_id)
 
 
 # =============================================================================
