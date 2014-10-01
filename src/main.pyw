@@ -8,6 +8,7 @@ TODO:
 # =============================================================================
 # Python
 import copy
+import os
 
 from configobj import ConfigObj
 
@@ -26,6 +27,8 @@ import gui
 LABEL_EDIT = 'Edit'
 LABEL_ADD = 'Add'
 LABEL_REMOVE = 'Remove'
+
+TEMPLATES_PATH = 'templates.ini'
 
 
 # =============================================================================
@@ -180,7 +183,6 @@ class TemplateManager(dict):
 
         return copy.deepcopy(self[name])
 
-template_mngr = TemplateManager('templates.ini')
 
 
 # =============================================================================
@@ -201,27 +203,33 @@ class WikiEditorFrame(gui.MainFrame):
 
         super(WikiEditorFrame, self).__init__(parent)
 
-        self.save_path = None
+        if not os.path.isfile(TEMPLATES_PATH):
+            wx.MessageBox('Unable to find "{0}".'.format(TEMPLATES_PATH),
+                'File not found', wx.OK | wx.ICON_ERROR)
+            self.Close()
+        else:
+            self.template_mngr = TemplateManager(TEMPLATES_PATH)
+            self.save_path = None
 
-        # Contains the item ID of the item that was right clicked
-        self.selected_item_id = None
+            # Contains the item ID of the item that was right clicked
+            self.selected_item_id = None
 
-        # Build the popup menu that appears on a right click
-        self.popup_menu = wx.Menu()
+            # Build the popup menu that appears on a right click
+            self.popup_menu = wx.Menu()
 
-        item = self.popup_menu.Append(-1, LABEL_ADD)
-        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+            item = self.popup_menu.Append(-1, LABEL_ADD)
+            self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
 
-        item = self.popup_menu.Append(-1, LABEL_REMOVE)
-        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+            item = self.popup_menu.Append(-1, LABEL_REMOVE)
+            self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
 
-        self.popup_menu.AppendSeparator()
+            self.popup_menu.AppendSeparator()
 
-        item = self.popup_menu.Append(-1, LABEL_EDIT)
-        self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
+            item = self.popup_menu.Append(-1, LABEL_EDIT)
+            self.Bind(wx.EVT_MENU, self.on_popup_item_selected, item)
 
-        # After initialization ask for a new project
-        self.ask_for_new_project()
+            # After initialization ask for a new project
+            self.ask_for_new_project()
 
     def on_popup_item_selected(self, event):
         '''
@@ -258,7 +266,7 @@ class WikiEditorFrame(gui.MainFrame):
                 template_name = tree_part.templates[0]
 
             # Get the template which is hold by the container
-            template = template_mngr.get_template(template_name)
+            template = self.template_mngr.get_template(template_name)
 
             # Add the template as a child to the container
             new_node = self.wiki_items.AppendItem(self.selected_item_id, template.name)
@@ -397,7 +405,7 @@ class WikiEditorFrame(gui.MainFrame):
         self.save_path = None
 
         # Get the new template
-        template = template_mngr.get_template(template_name)
+        template = self.template_mngr.get_template(template_name)
 
         # Save it as the root item
         root = self.wiki_items.AddRoot(template.name)

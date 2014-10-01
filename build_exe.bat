@@ -1,2 +1,2 @@
-pyinstaller src/main.pyw --clean --onefile --noconsole --name=WikiEditor
+pyinstaller src/main.pyw --clean --noconsole --name=WikiEditor
 pause
