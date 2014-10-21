@@ -7,18 +7,22 @@ TODO:
 # >> IMPORTS
 # =============================================================================
 # Python
-import copy
 import os
-
-from configobj import ConfigObj
-
-from collections import OrderedDict
 
 # wxPython
 import wx
 
 # gui
 import gui
+
+# templates
+from templates import TemplateContainer
+from templates import NonTemplate
+from templates import Template
+from templates import TemplateManager
+
+# mwparserfromhell
+import mwparserfromhell
 
 
 # =============================================================================
@@ -29,160 +33,6 @@ LABEL_ADD = 'Add'
 LABEL_REMOVE = 'Remove'
 
 TEMPLATES_PATH = 'templates.ini'
-
-
-# =============================================================================
-# >> CLASSES
-# =============================================================================
-class TreePart(object):
-    '''
-    Base class for everything in a tree.
-
-    Treat this as an abstract class!
-    '''
-
-    def __init__(self, name):
-        '''
-        Initializes the class.
-
-        @param <name>:
-        The name of the node in the tree.
-        '''
-
-        self.name = name
-
-    def generate_data(self, wiki_items, item_id):
-        '''
-        Generates the data for a tree node.
-
-        @param <wiki_items>:
-        A wx.TreeCtrl object.
-
-        @param <item_id>:
-        The item ID of thise node.
-
-        A subclass needs to implement this!
-        '''
-
-        raise NotImplementedError
-
-
-class TemplateContainer(TreePart):
-    '''
-    Represents a node in the tree that can store an unlimited number of
-    children.
-    '''
-
-    def __init__(self, name, templates):
-        '''
-        Initialzes the object.
-
-        @param <name>:
-        The name of the node.
-
-        @param <templates>:
-        A tuple of possible template (names).
-        '''
-
-        super(TemplateContainer, self).__init__(name)
-        self.templates = templates
-
-    def generate_data(self, wiki_items, item_id):
-        data = []
-
-        # Loop through all valid children and generate the data for each
-        # child.
-        child_id, cookie = wiki_items.GetFirstChild(item_id)
-        while child_id.IsOk():
-            data.append(wiki_items.GetItemData(
-                child_id).GetData().generate_data(wiki_items, child_id))
-            child_id, cookie = wiki_items.GetNextChild(item_id, cookie)
-
-        # Finally, join the result
-        return '\n'.join(data)
-
-
-class NonTemplate(TreePart):
-    '''
-    Represents a node that is not a container or template.
-    '''
-
-    def __init__(self, name):
-        '''
-        Initializes the object.
-
-        @param <name>:
-        The name of the node in the tree.
-        '''
-
-        super(NonTemplate, self).__init__(name)
-        self.value = ''
-
-    def generate_data(self, wiki_items, item_id):
-        return self.value.strip()
-
-
-class Template(OrderedDict, TreePart):
-    '''
-    Represents a full template in a tree.
-    '''
-
-    # NOTE:
-    # Do not override __init__. It will break things (e.g copy module) even if
-    # you use super().
-
-    def generate_data(self, wiki_items, item_id):
-        data = []
-
-        # Loop through all valid children and generate the data for each
-        # child.
-        child_id, cookie = wiki_items.GetFirstChild(item_id)
-        while child_id.IsOk():
-            child = wiki_items.GetItemData(child_id).GetData()
-            data.append('| {0}={1}'.format(child.name, child.generate_data(wiki_items, child_id)))
-            child_id, cookie = wiki_items.GetNextChild(item_id, cookie)
-
-        # Finally, join the result
-        return '{{%s\n%s}}'% (self.name, '\n'.join(data))
-
-
-class TemplateManager(dict):
-    '''
-    Manages all templates that where found in a given file.
-    '''
-
-    def __init__(self, file_path):
-        '''
-        Initialzes the object.
-
-        @param <file_path>:
-        The path to a file that contains the template data.
-        '''
-
-        for name, data in ConfigObj(file_path, file_error=True).items():
-            template = Template()
-            template.name = name
-            for key, value in data.items():
-                if value == 'str':
-                    template[key] = NonTemplate(key)
-                elif isinstance(value, list):
-                    template[key] = TemplateContainer(key, tuple(value))
-                else:
-                    template[key] = TemplateContainer(key, (value,))
-
-            self[name] = template
-
-    def get_template(self, name):
-        '''
-        Returns the new template object for the given template name. If no
-        template was found with the given name, a KeyError will be raised.
-
-        @param <name>:
-        The name of the template.
-        '''
-
-        return copy.deepcopy(self[name])
-
 
 
 # =============================================================================
@@ -282,7 +132,7 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Handle all other actions. This should not happen.
         else:
-            raise NotImplementedError
+            raise NotImplementedError('Should not happen!')
 
         # Finally, update the current data box
         self.display_current_data()
@@ -318,7 +168,7 @@ class WikiEditorFrame(gui.MainFrame):
         elif isinstance(tree_part, TemplateContainer):
             enabled = LABEL_ADD
         else:
-            raise NotImplementedError
+            raise NotImplementedError('Should not happen')
 
         # Enable the found action and disable all other actions
         for item in self.popup_menu.GetMenuItems():
@@ -330,8 +180,6 @@ class WikiEditorFrame(gui.MainFrame):
         '''
         Called when the selection of a wiki item has been changed.
         '''
-
-        item_id = event.GetItem()
 
         # Update the output box
         self.display_current_data()
@@ -348,7 +196,88 @@ class WikiEditorFrame(gui.MainFrame):
         Called when a file should be opened.
         '''
 
-        raise NotImplementedError
+        open_file_dialog = wx.FileDialog(self, 'Open', style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        if open_file_dialog.ShowModal() == wx.ID_CANCEL:
+            return
+
+        with open(open_file_dialog.GetPath(), 'r') as f:
+            wikicode = mwparserfromhell.parse(f.read())
+
+        # Get the base template
+        templates = wikicode.filter_templates(recursive=False)
+        if len(templates) != 1:
+            raise ValueError('Number of base templates does not equal 1.')
+
+        wiki_template = templates[0]
+
+        # Get the new template
+        template = self.template_mngr.get_template(wiki_template.name.strip())
+
+        # Reset the tree
+        self.wiki_items.DeleteAllItems()
+        self.save_path = open_file_dialog.GetPath()
+
+        def add_parameters(parent, template, wiki_template):
+            '''
+            Adds the parameters and its values to the tree.
+
+            @param <parent>:
+            A TreeItemId object that defines the root of the template.
+
+            @param <template>:
+            A Template object whose parameters should be added.
+
+            @param <wiki_template>:
+            A Wikicode object.
+            '''
+
+            # We want to know if the file defines an unknown parameter
+            params = map(lambda tree_part: tree_part.name, template.values())
+            for param in map(lambda param: param.name.strip(), wiki_template.params):
+                if param not in params:
+                    raise NameError('Unknown paramter "{0}".'.format(param))
+
+            # Add all the parameters of the template
+            for tree_part in template.values():
+                item = self.wiki_items.AppendItem(parent, tree_part.name)
+                self.wiki_items.SetItemData(item, wx.TreeItemData(tree_part))
+
+                # If the template did not define this parameter, just continue
+                if not wiki_template.has(tree_part.name):
+                    continue
+
+                # Get the value of the parameters
+                param = wiki_template.get(tree_part.name).value
+
+                if isinstance(tree_part, NonTemplate):
+                    tree_part.value = str(param)
+
+                elif isinstance(tree_part, TemplateContainer):
+                    # Loop through all templates the current parameter defined
+                    for child_wiki_template in param.filter_templates(recursive=False):
+                        child_template_name = child_wiki_template.name.strip()
+                        child_template = self.template_mngr.get_template(child_template_name)
+
+                        child = self.wiki_items.AppendItem(item, child_template_name)
+                        self.wiki_items.SetItemData(child, wx.TreeItemData(child_template))
+
+                        # Add its parameters recursively
+                        add_parameters(child, child_template, child_wiki_template)
+                else:
+                    raise ValueError('Unexpected tree part object.')
+
+        # Save it as the root item
+        root = self.wiki_items.AddRoot(template.name)
+        self.wiki_items.SetItemData(root, wx.TreeItemData(template))
+
+        # Add the parameters recursively
+        add_parameters(root, template, wiki_template)
+
+        # Show every node
+        self.wiki_items.ExpandAll()
+
+        # Update the output box
+        self.display_current_data()
 
     def on_save_file(self, event):
         '''
@@ -458,6 +387,11 @@ class WikiEditorFrame(gui.MainFrame):
         '''
 
         item_id = self.wiki_items.GetFocusedItem()
+        if not item_id.IsOk():
+            item_id = self.wiki_items.GetRootItem()
+            if not item_id.IsOk():
+                return
+
         self.output.Value = self.wiki_items.GetItemData(
             item_id).GetData().generate_data(self.wiki_items, item_id)
 
