@@ -278,6 +278,9 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Update the output box
         self.display_current_data()
+        
+        # Force the scrollbar to be on the top
+        self.wiki_items.SetScrollPos(wx.VERTICAL, 0)
 
     def on_save_file(self, event):
         '''
