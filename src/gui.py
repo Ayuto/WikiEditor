@@ -17,7 +17,7 @@ import wx.xrc
 class MainFrame ( wx.Frame ):
 	
 	def __init__( self, parent ):
-		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = u"WikiEditor", pos = wx.DefaultPosition, size = wx.Size( 522,385 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
+		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = u"WikiEditor", pos = wx.DefaultPosition, size = wx.Size( 974,432 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
 		
 		self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
 		self.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
@@ -29,6 +29,17 @@ class MainFrame ( wx.Frame ):
 		
 		self.output = wx.TextCtrl( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, wx.TE_MULTILINE|wx.TE_READONLY )
 		bSizer1.Add( self.output, 1, wx.ALL|wx.EXPAND, 5 )
+		
+		bSizer8 = wx.BoxSizer( wx.VERTICAL )
+		
+		self.copy_to_clipboard = wx.Button( self, wx.ID_ANY, u"Copy to clipboard", wx.DefaultPosition, wx.DefaultSize, 0 )
+		bSizer8.Add( self.copy_to_clipboard, 0, wx.ALL|wx.EXPAND, 5 )
+		
+		self.copy_all_to_clipboard = wx.Button( self, wx.ID_ANY, u"Copy all to clipboard", wx.DefaultPosition, wx.DefaultSize, 0 )
+		bSizer8.Add( self.copy_all_to_clipboard, 0, wx.ALL|wx.EXPAND, 5 )
+		
+		
+		bSizer1.Add( bSizer8, 0, wx.EXPAND, 5 )
 		
 		
 		self.SetSizer( bSizer1 )
@@ -58,6 +69,8 @@ class MainFrame ( wx.Frame ):
 		self.wiki_items.Bind( wx.EVT_TREE_ITEM_ACTIVATED, self.on_wiki_item_activated )
 		self.wiki_items.Bind( wx.EVT_TREE_ITEM_RIGHT_CLICK, self.on_wiki_items_right_click )
 		self.wiki_items.Bind( wx.EVT_TREE_SEL_CHANGED, self.on_wiki_item_selection )
+		self.copy_to_clipboard.Bind( wx.EVT_BUTTON, self.on_copy_to_clipboard )
+		self.copy_all_to_clipboard.Bind( wx.EVT_BUTTON, self.on_copy_all_to_clipboard )
 		self.Bind( wx.EVT_MENU, self.on_new_project, id = self.new_project.GetId() )
 		self.Bind( wx.EVT_MENU, self.on_open_file, id = self.open_file.GetId() )
 		self.Bind( wx.EVT_MENU, self.on_save_file, id = self.save_file.GetId() )
@@ -75,6 +88,12 @@ class MainFrame ( wx.Frame ):
 		event.Skip()
 	
 	def on_wiki_item_selection( self, event ):
+		event.Skip()
+	
+	def on_copy_to_clipboard( self, event ):
+		event.Skip()
+	
+	def on_copy_all_to_clipboard( self, event ):
 		event.Skip()
 	
 	def on_new_project( self, event ):

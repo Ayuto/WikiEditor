@@ -319,6 +319,38 @@ class WikiEditorFrame(gui.MainFrame):
         self.save_path = save_file_dialog.GetPath()
         self.on_save_file(event)
 
+    def on_copy_all_to_clipboard(self, event):
+        '''
+        Generates the data by using the root item and copies it to the
+        clipboard.
+        '''
+
+        self.set_clipboard_data(self.wiki_items.GetRootItem())
+
+    def on_copy_to_clipboard(self, event):
+        '''
+        Generates the data by using the focused item and copies it to the
+        clipboard.
+        '''
+        
+        self.set_clipboard_data(self.wiki_items.GetFocusedItem())
+
+    def set_clipboard_data(self, item_id):
+        '''
+        Generates the data by using the given item and copies it to the
+        clipboard.
+        '''
+
+        if not item_id.IsOk():
+            return
+            
+        data = self.wiki_items.GetItemData(
+            item_id).GetData().generate_data(self.wiki_items, item_id)
+            
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(data))
+            wx.TheClipboard.Close()
+
     def init_new_project(self, template_name):
         '''
         Initializes a new project.
@@ -360,6 +392,9 @@ class WikiEditorFrame(gui.MainFrame):
         dialog.input_box.Value = tree_part.value
         if dialog.ShowModal() == wx.ID_OK:
             tree_part.value = dialog.input_box.Value
+
+            # Update the output box
+            self.display_current_data()
 
         dialog.Destroy()
 
