@@ -8,6 +8,7 @@ TODO:
 # =============================================================================
 # Python
 import os
+import traceback
 
 # wxPython
 import wx
@@ -200,7 +201,18 @@ class WikiEditorFrame(gui.MainFrame):
         if open_file_dialog.ShowModal() == wx.ID_CANCEL:
             return
 
-        with open(open_file_dialog.GetPath(), 'r') as f:
+        try:
+            self.parse_file(open_file_dialog.GetPath())
+        except Exception as e:
+            wx.MessageBox(traceback.format_exc(),
+                'Error', wx.OK | wx.ICON_ERROR)
+
+    def parse_file(self, path):
+        '''
+        Parses and displays the given file.
+        '''
+
+        with open(path, 'r') as f:
             wikicode = mwparserfromhell.parse(f.read())
 
         # Get the base template
@@ -215,7 +227,7 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Reset the tree
         self.wiki_items.DeleteAllItems()
-        self.save_path = open_file_dialog.GetPath()
+        self.save_path = path
 
         def add_parameters(parent, template, wiki_template):
             '''
@@ -235,7 +247,9 @@ class WikiEditorFrame(gui.MainFrame):
             params = map(lambda tree_part: tree_part.name, template.values())
             for param in map(lambda param: param.name.strip(), wiki_template.params):
                 if param not in params:
-                    raise NameError('Unknown paramter "{0}".'.format(param))
+                    raise NameError(
+                        'Template "{0}" has no parameter "{1}".'.format(
+                            wiki_template.name, param))
 
             # Add all the parameters of the template
             for tree_part in template.values():
@@ -278,7 +292,7 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Update the output box
         self.display_current_data()
-        
+
         # Force the scrollbar to be on the top
         self.wiki_items.SetScrollPos(wx.VERTICAL, 0)
 
@@ -335,7 +349,7 @@ class WikiEditorFrame(gui.MainFrame):
         Generates the data by using the focused item and copies it to the
         clipboard.
         '''
-        
+
         self.set_clipboard_data(self.wiki_items.GetFocusedItem())
 
     def set_clipboard_data(self, item_id):
@@ -346,10 +360,10 @@ class WikiEditorFrame(gui.MainFrame):
 
         if not item_id.IsOk():
             return
-            
+
         data = self.wiki_items.GetItemData(
             item_id).GetData().generate_data(self.wiki_items, item_id)
-            
+
         if wx.TheClipboard.Open():
             wx.TheClipboard.SetData(wx.TextDataObject(data))
             wx.TheClipboard.Close()
@@ -382,6 +396,7 @@ class WikiEditorFrame(gui.MainFrame):
 
         # Show every node
         self.wiki_items.ExpandAll()
+        self.display_current_data()
 
     def send_edit_dialog(self, tree_part):
         '''
