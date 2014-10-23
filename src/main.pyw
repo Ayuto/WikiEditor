@@ -125,6 +125,9 @@ class WikiEditorFrame(gui.MainFrame):
             for tree_part in template.values():
                 item = self.wiki_items.AppendItem(new_node, tree_part.name)
                 self.wiki_items.SetItemData(item, wx.TreeItemData(tree_part))
+                
+            self.wiki_items.Expand(self.selected_item_id)
+            self.wiki_items.ExpandAllChildren(new_node)
 
         # Handle remove action
         elif action == LABEL_REMOVE:
@@ -144,11 +147,16 @@ class WikiEditorFrame(gui.MainFrame):
         double-clicking it.
         '''
 
-        tree_part = self.wiki_items.GetItemData(event.GetItem()).GetData()
+        item_id = event.GetItem()
+        tree_part = self.wiki_items.GetItemData(item_id).GetData()
 
         # Only NonTemplate objects are editable!
         if isinstance(tree_part, NonTemplate):
             self.send_edit_dialog(tree_part)
+        elif self.wiki_items.IsExpanded(item_id):
+            self.wiki_items.Collapse(item_id)
+        else:
+            self.wiki_items.Expand(item_id)
 
     def on_wiki_items_right_click(self, event):
         '''
